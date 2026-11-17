@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     DIALER_TICK_SECONDS: int = 10
     CALL_STUCK_SECONDS: int = 1500           # reaper: calls with no hangup after this
 
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = "https://app.astric.business"
 
     @property
     def voice_model(self) -> str:
