@@ -1,0 +1,46 @@
+// ═══ Astric Voice — Firestore rules to MERGE into your existing firestore.rules ═══
+//
+// !!! READ THIS FIRST !!!
+// Firestore rules are OR-ed: if ANY rule matching a path allows access, access is
+// allowed — there is no "deny" that overrides an "allow". If your current rules
+// contain a broad rule such as
+//        match /users/{uid}/{document=**} { allow read, write: if request.auth.uid == uid; }
+// then the owner can still WRITE users/{uid}/voice/wallet from the app and give
+// themselves free minutes, and read their own carrier secrets. Replace any such
+// recursive wildcard with explicit per-collection matches, or exclude these paths.
+// (Check users/{uid}/whatsapp/subscription for the same exposure.)
+//
+// Paste inside:  match /databases/{database}/documents { ... }
+
+function vIsOwner(ownerId) {
+  return request.auth != null && request.auth.uid == ownerId;
+}
+function vIsMember(ownerId) {
+  return request.auth != null && (
+    request.auth.uid == ownerId ||
+    (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'employee' &&
+     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminId == ownerId));
+}
+
+// Minutes balance: the app can READ it; ONLY the Node + Python backends (Admin SDK) write it.
+match /users/{ownerId}/voice/wallet {
+  allow read: if vIsMember(ownerId);
+  allow write: if false;
+}
+// Admin-editable, non-secret configuration written directly by the app.
+match /users/{ownerId}/voice/settings { allow read: if vIsMember(ownerId); allow write: if vIsOwner(ownerId); }
+match /users/{ownerId}/voice/info     { allow read: if vIsMember(ownerId); allow write: if vIsOwner(ownerId); }
+match /users/{ownerId}/voice_products/{id} { allow read: if vIsMember(ownerId); allow write: if vIsOwner(ownerId); }
+
+// Call records are written by the backend only. Admin sees all; an employee sees calls on leads
+// they can see (the backend copies the lead's visibleTo onto each call). Employees must query with
+// .where('visibleTo', arrayContains: uid) for list queries to be allowed.
+match /users/{ownerId}/voice_calls/{id} {
+  allow read: if vIsOwner(ownerId) || (request.auth != null && request.auth.uid in resource.data.visibleTo);
+  allow write: if false;
+}
+
+// Carrier credentials: never readable or writable from any client.
+match /users/{ownerId}/voice_secrets/{doc} { allow read, write: if false; }
+// Dialer registry (backend only).
+match /voice_active_batches/{id} { allow read, write: if false; }
